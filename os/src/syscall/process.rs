@@ -1,9 +1,13 @@
 //! Process management syscalls
+
 use crate::{
     config::MAX_SYSCALL_NUM,
+    mm::{VirtAddr,virt_addr_to_phy_addr},
     task::{
-        change_program_brk, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus,
+        change_program_brk, exit_current_and_run_next, suspend_current_and_run_next,
+         TaskStatus,
     },
+    timer::get_time_us,
 };
 
 #[repr(C)]
@@ -43,7 +47,23 @@ pub fn sys_yield() -> isize {
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
-    -1
+    let us = get_time_us();
+    let v_addr = VirtAddr(_ts as usize);
+    // // from virtAddr to PhysAddr
+    // virt_addr_to_phy_addr(v_addr);
+    let p_addr = virt_addr_to_phy_addr(v_addr);
+    let ts = p_addr.0 as *mut TimeVal;
+   
+    unsafe {
+        // print!("p_addr is {}",p_addr.0);
+        *ts = TimeVal {
+            sec: us / 1_000_000,
+            usec: us % 1_000_000,
+        };
+        // print!("sec is {}",(*ts).sec);
+
+    }
+    0
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
