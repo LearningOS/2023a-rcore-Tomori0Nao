@@ -1,11 +1,10 @@
 //! Process management syscalls
 
 use crate::{
-    config::MAX_SYSCALL_NUM,
     mm::{VirtAddr,virt_addr_to_phy_addr},
     task::{
         change_program_brk, exit_current_and_run_next, suspend_current_and_run_next,
-         TaskStatus,
+        get_task_info,TaskInfo
     },
     timer::get_time_us,
 };
@@ -18,15 +17,15 @@ pub struct TimeVal {
 }
 
 /// Task information
-#[allow(dead_code)]
-pub struct TaskInfo {
-    /// Task status in it's life cycle
-    status: TaskStatus,
-    /// The numbers of syscall called by task
-    syscall_times: [u32; MAX_SYSCALL_NUM],
-    /// Total running time of task
-    time: usize,
-}
+// #[allow(dead_code)]
+// pub struct TaskInfo {
+//     /// Task status in it's life cycle
+//     status: TaskStatus,
+//     /// The numbers of syscall called by task
+//     syscall_times: [u32; MAX_SYSCALL_NUM],
+//     /// Total running time of task
+//     time: usize,
+// }
 
 /// task exits and submit an exit code
 pub fn sys_exit(_exit_code: i32) -> ! {
@@ -48,21 +47,26 @@ pub fn sys_yield() -> isize {
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
     let us = get_time_us();
-    let v_addr = VirtAddr(_ts as usize);
+
+    let v_addr = VirtAddr::from(_ts as usize);
     // // from virtAddr to PhysAddr
-    // virt_addr_to_phy_addr(v_addr);
+    trace!("kernel: v_addr is {}",v_addr.0);
     let p_addr = virt_addr_to_phy_addr(v_addr);
-    let ts = p_addr.0 as *mut TimeVal;
+    
+    trace!("kernel: p_addr is {}",p_addr.0);
+    trace!("kernel: time is {}",us);
    
+    let ts = p_addr.0 as *mut TimeVal;
     unsafe {
-        // print!("p_addr is {}",p_addr.0);
         *ts = TimeVal {
             sec: us / 1_000_000,
             usec: us % 1_000_000,
         };
+        // panic!("!!!!");
+        // trace!("kernel: sec is  {}",(*ts).sec);
         // print!("sec is {}",(*ts).sec);
-
     }
+    
     0
 }
 
@@ -71,7 +75,14 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
 pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
     trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
-    -1
+    let v_addr = VirtAddr::from(_ti as usize);
+    let p_addr = virt_addr_to_phy_addr(v_addr);
+
+    let ti = p_addr.0 as *mut TaskInfo;
+
+    get_task_info(ti); 
+
+    0
 }
 
 // YOUR JOB: Implement mmap.

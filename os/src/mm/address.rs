@@ -285,17 +285,24 @@ pub fn virt_addr_to_phy_addr(vaddr: VirtAddr) -> PhysAddr {
     // 虚拟页表得到物理页号、
     // 物理页号加上偏移得到物理地址
     let vpn = vaddr.floor();
-    let offest = vaddr.page_offset();
+    let offset = vaddr.page_offset();
     let token = current_user_token();
     // 根据"改写sys_write 的实现"中 "translated_byte_buffer"的介绍
     // 从vpn获得ppn
     let page_table = PageTable::from_token(token);
     let ppn = page_table.translate(vpn).unwrap().ppn();
+    
+    let addr = PhysAddr::from(ppn);
+    trace!("kernel: vpn is {}",vpn.0);
+    trace!("kernel: token is {}",token);
 
-    // print!("ppn is {}",ppn.0);
-    // print!("vpn is {}",vpn.0);
-    // print!("offerset is {}",offest);
-    let addr = PhysAddr(ppn.0 + offest);
-    // print!("addr is {}",addr.0);
-    addr
+
+    trace!("kernel: ppn is {}",ppn.0);
+    trace!("kernel: addr is {}",addr.0);
+    trace!("kernel: offset is {}",offset);
+    let test = usize::from(addr) + offset;
+
+    print!("test is {}",test);
+    
+    PhysAddr::from(test)
 }

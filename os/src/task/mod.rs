@@ -20,7 +20,8 @@ use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
-pub use task::{TaskControlBlock, TaskStatus};
+pub use task::{TaskControlBlock, TaskStatus,TaskInfo};
+use crate::timer::get_time_ms;
 
 pub use context::TaskContext;
 
@@ -153,6 +154,23 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+    /// Set syscall times for current task
+    fn set_syscall_times(&self,syscall_id: usize){
+        let mut inner = self.inner.exclusive_access();
+        let current_id = inner.current_task;
+        inner.tasks[current_id].task_info.syscall_times[syscall_id] +=1;
+    }
+    /// pass task info to the pointer
+    fn get_task_info(&self,_ti: *mut TaskInfo) {
+        let inner = self.inner.exclusive_access();
+        let current_id = inner.current_task;
+        unsafe {
+            (*_ti).status = TaskStatus::Running;
+            (*_ti).syscall_times = inner.tasks[current_id].task_info.syscall_times;
+            // 参考 https://rcore-os.cn/rCore-Tutorial-Book-v3/chapter3/6answer.html 关于时间计算的实现
+            (*_ti).time = get_time_ms() - inner.tasks[current_id].task_info.time;
+        }
+    }
 }
 
 /// Run the first task in task list.
@@ -201,4 +219,13 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+/// Set syscall times for current task
+pub fn set_syscall_times(syscall_id: usize){
+    TASK_MANAGER.set_syscall_times(syscall_id);
+}
+
+/// pass task info to the pointer
+pub fn get_task_info(_ti: *mut TaskInfo){
+    TASK_MANAGER.get_task_info(_ti);
 }
