@@ -19,7 +19,11 @@ use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
 use lazy_static::*;
 use switch::__switch;
+<<<<<<< HEAD
 pub use task::{TaskControlBlock, TaskStatus, TaskInfo};
+=======
+pub use task::{TaskControlBlock, TaskStatus,TaskInfo};
+>>>>>>> 9983db11acadaa049a00d661c50300d3bb98a535
 use crate::timer::get_time_ms;
 pub use context::TaskContext;
 
@@ -141,6 +145,10 @@ impl TaskManager {
         }
     }
     /// Set syscall times for current task
+<<<<<<< HEAD
+=======
+    
+>>>>>>> 9983db11acadaa049a00d661c50300d3bb98a535
     fn set_syscall_times(&self,syscall_id: usize){
         let mut inner = self.inner.exclusive_access();
         let current_id = inner.current_task;
