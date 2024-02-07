@@ -1,10 +1,9 @@
 //! Process management syscalls
 
 use crate::{
-    mm::{VirtAddr,virt_addr_to_phy_addr},
+    mm::{virt_addr_to_phy_addr, VirtAddr},
     task::{
-        change_program_brk, exit_current_and_run_next, suspend_current_and_run_next,
-        get_task_info,TaskInfo
+        change_program_brk, exit_current_and_run_next, get_task_info, suspend_current_and_run_next, task_mmap, task_unmap, TaskInfo
     },
     timer::get_time_us,
 };
@@ -50,12 +49,12 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
 
     let v_addr = VirtAddr::from(_ts as usize);
     // // from virtAddr to PhysAddr
-    trace!("kernel: v_addr is {}",v_addr.0);
+    trace!("kernel: v_addr is {}", v_addr.0);
     let p_addr = virt_addr_to_phy_addr(v_addr);
-    
-    trace!("kernel: p_addr is {}",p_addr.0);
-    trace!("kernel: time is {}",us);
-   
+
+    trace!("kernel: p_addr is {}", p_addr.0);
+    trace!("kernel: time is {}", us);
+
     let ts = p_addr.0 as *mut TimeVal;
     unsafe {
         *ts = TimeVal {
@@ -66,7 +65,7 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
         // trace!("kernel: sec is  {}",(*ts).sec);
         // print!("sec is {}",(*ts).sec);
     }
-    
+
     0
 }
 
@@ -80,7 +79,7 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
 
     let ti = p_addr.0 as *mut TaskInfo;
 
-    get_task_info(ti); 
+    get_task_info(ti);
 
     0
 }
@@ -88,13 +87,24 @@ pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
 // YOUR JOB: Implement mmap.
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    -1
+    if _port &! 0x7 != 0 || _port & 0x7 == 0 {
+        return -1;
+    } 
+    if _start % 4096 != 0 {
+        return  -1;
+    }
+    // -1
+    task_mmap(_start, _len, _port)
 }
 
 // YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
     trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+    if _start % 4096 != 0 {
+        return  -1;
+    }
+    task_unmap(_start, _len)
+    // -1
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {

@@ -302,7 +302,7 @@ pub fn virt_addr_to_phy_addr(vaddr: VirtAddr) -> PhysAddr {
     trace!("kernel: offset is {}",offset);
     let test = usize::from(addr) + offset;
 
-    print!("test is {}",test);
+    // print!("test is {}",test);
     
     PhysAddr::from(test)
 }

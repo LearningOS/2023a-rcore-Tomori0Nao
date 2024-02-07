@@ -262,6 +262,57 @@ impl MemorySet {
             false
         }
     }
+    /// check whether address already exits in mmset
+    pub fn addr_exits(&self, start_va: VirtAddr, end_va: VirtAddr) -> isize {
+        let area = &self.areas;
+        for map_area in area {
+            if map_area.addr_exits(start_va, end_va) == -1 {
+                return -1;
+            }
+        }
+        0
+    }
+    /// check whether VirtAddr out of range
+    pub fn unmap_check(&self, start_va: VirtAddr,end_va: VirtAddr) -> isize {
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        if let Some(_) = self.areas.iter().find(|area| area.vpn_range.get_end() >= end_vpn && area.vpn_range.get_start() <= start_vpn ){
+            return 0;
+        };
+        -1
+    }
+    /// unmap target mem_area
+    pub fn unmap(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> isize {
+        if self.unmap_check(start_va,end_va) == -1 {
+            return -1;
+        }
+
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        // let mut count = 0;
+        // println!("mmap test!!!");
+        println!(
+            "in unmap   start_vpn is {}, end_vpn is {},",
+            start_vpn.0, end_vpn.0
+        );
+        let area = &mut self.areas;
+        let page_table = &mut self.page_table;
+        // self.areas;
+        for map_area in area {
+            let vpn_range = map_area.vpn_range;
+            if vpn_range.get_start() < start_vpn && vpn_range.get_end() == end_vpn {
+                println!("in shrink!!!");
+                map_area.shrink_to(page_table, start_vpn);
+            } else if vpn_range.get_start() == start_vpn && vpn_range.get_end() >= end_vpn {
+                for vpn in VPNRange::new(vpn_range.get_start(), end_vpn) {
+                    map_area.unmap_one(page_table, vpn);
+                }
+                println!("new start vpn is {}",end_vpn.0);
+                map_area.vpn_range = VPNRange::new(end_vpn, vpn_range.get_end());
+            }
+        }
+        0
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
@@ -304,8 +355,10 @@ impl MapArea {
     }
     #[allow(unused)]
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
+        println!("in unmap_one");
         if self.map_type == MapType::Framed {
             self.data_frames.remove(&vpn);
+            println!("removed");
         }
         page_table.unmap(vpn);
     }
@@ -355,6 +408,19 @@ impl MapArea {
             }
             current_vpn.step();
         }
+    }
+    /// check whether address exits
+    pub fn addr_exits(&self, start_va: VirtAddr, end_va: VirtAddr) -> isize {
+        let vpn_range = self.vpn_range;
+
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        if start_vpn >= vpn_range.get_start() && start_vpn < vpn_range.get_end()
+            || (end_vpn <= vpn_range.get_end() && end_vpn > vpn_range.get_start())
+        {
+            return -1;
+        }
+        0
     }
 }
 

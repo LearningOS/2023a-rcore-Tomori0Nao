@@ -15,13 +15,14 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, VirtAddr};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
-pub use task::{TaskControlBlock, TaskStatus,TaskInfo};
-use crate::timer::get_time_ms;
+pub use task::{TaskControlBlock, TaskInfo, TaskStatus};
 
 pub use context::TaskContext;
 
@@ -155,13 +156,13 @@ impl TaskManager {
         }
     }
     /// Set syscall times for current task
-    fn set_syscall_times(&self,syscall_id: usize){
+    fn set_syscall_times(&self, syscall_id: usize) {
         let mut inner = self.inner.exclusive_access();
         let current_id = inner.current_task;
-        inner.tasks[current_id].task_info.syscall_times[syscall_id] +=1;
+        inner.tasks[current_id].task_info.syscall_times[syscall_id] += 1;
     }
     /// pass task info to the pointer
-    fn get_task_info(&self,_ti: *mut TaskInfo) {
+    fn get_task_info(&self, _ti: *mut TaskInfo) {
         let inner = self.inner.exclusive_access();
         let current_id = inner.current_task;
         unsafe {
@@ -170,6 +171,50 @@ impl TaskManager {
             // 参考 https://rcore-os.cn/rCore-Tutorial-Book-v3/chapter3/6answer.html 关于时间计算的实现
             (*_ti).time = get_time_ms() - inner.tasks[current_id].task_info.time;
         }
+    }
+    /// mmap for current task
+    fn task_mmap(&self, _start: usize, _len: usize, _port: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current_id = inner.current_task;
+        let mm_set = &mut inner.tasks[current_id].memory_set;
+
+        let start_va = VirtAddr::from(_start);
+        let end_va = VirtAddr::from(_start + _len );
+        let permission = match _port {
+            1 => MapPermission::R | MapPermission::U,
+            2 => MapPermission::W | MapPermission::U,
+            3 => {
+                // println!("3!!!");
+                MapPermission::R | MapPermission::W | MapPermission::U
+            }
+            4 => MapPermission::X | MapPermission::U,
+            5 => MapPermission::R | MapPermission::X | MapPermission::U,
+            6 => MapPermission::W | MapPermission::X | MapPermission::U,
+            7 => MapPermission::R | MapPermission::W | MapPermission::X | MapPermission::U,
+            _ => MapPermission::R,
+        };
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        println!("start_vpn is {}, end_vpn is {}", start_vpn.0, end_vpn.0);
+        // for mm_area in mm_set
+        if mm_set.addr_exits(start_va, end_va) == -1 {
+            return -1;
+        }
+
+        mm_set.insert_framed_area(start_va, end_va, permission);
+        0
+    }
+    /// unmap for current task
+    fn task_unmap(&self, _start: usize, _len: usize) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current_id = inner.current_task;
+        let mm_set = &mut inner.tasks[current_id].memory_set;
+
+        let start_va = VirtAddr::from(_start);
+        let end_va = VirtAddr::from(_start + _len);
+
+        mm_set.unmap(start_va, end_va)
+        // 0
     }
 }
 
@@ -221,11 +266,19 @@ pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
 }
 /// Set syscall times for current task
-pub fn set_syscall_times(syscall_id: usize){
+pub fn set_syscall_times(syscall_id: usize) {
     TASK_MANAGER.set_syscall_times(syscall_id);
 }
 
 /// pass task info to the pointer
-pub fn get_task_info(_ti: *mut TaskInfo){
+pub fn get_task_info(_ti: *mut TaskInfo) {
     TASK_MANAGER.get_task_info(_ti);
+}
+/// mmap for current task
+pub fn task_mmap(_start: usize, _len: usize, _port: usize) -> isize {
+    TASK_MANAGER.task_mmap(_start, _len, _port)
+}
+/// unmap for current task
+pub fn task_unmap(_start: usize, _len: usize) -> isize {
+    TASK_MANAGER.task_unmap(_start, _len)
 }
