@@ -1,6 +1,6 @@
 //! Implementation of physical and virtual address and page number.
 use super::PageTableEntry;
-use crate::config::{PAGE_SIZE, PAGE_SIZE_BITS};
+use crate::{config::{PAGE_SIZE, PAGE_SIZE_BITS}, mm::page_table::PageTable, task::current_user_token};
 use core::fmt::{self, Debug, Formatter};
 
 const PA_WIDTH_SV39: usize = 56;
@@ -288,3 +288,30 @@ where
 }
 /// a simple range structure for virtual page number
 pub type VPNRange = SimpleRange<VirtPageNum>;
+/// 实现虚拟地址到物理地址的转换
+pub fn virt_addr_to_phy_addr(vaddr: VirtAddr) -> PhysAddr {
+    // 由虚拟地址得到虚拟页号、地址偏移
+    // 虚拟页表得到物理页号、
+    // 物理页号加上偏移得到物理地址
+    let vpn = vaddr.floor();
+    let offset = vaddr.page_offset();
+    let token = current_user_token();
+    // 根据"改写sys_write 的实现"中 "translated_byte_buffer"的介绍
+    // 从vpn获得ppn
+    let page_table = PageTable::from_token(token);
+    let ppn = page_table.translate(vpn).unwrap().ppn();
+    
+    let addr = PhysAddr::from(ppn);
+    trace!("kernel: vpn is {}",vpn.0);
+    trace!("kernel: token is {}",token);
+
+
+    trace!("kernel: ppn is {}",ppn.0);
+    trace!("kernel: addr is {}",addr.0);
+    trace!("kernel: offset is {}",offset);
+    let test = usize::from(addr) + offset;
+
+    // print!("test is {}",test);
+    
+    PhysAddr::from(test)
+}
