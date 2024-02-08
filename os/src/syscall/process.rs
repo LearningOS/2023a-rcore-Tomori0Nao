@@ -2,13 +2,12 @@
 use alloc::sync::Arc;
 
 use crate::{
-    config::MAX_SYSCALL_NUM,
+    // config::MAX_SYSCALL_NUM,
     loader::get_app_data_by_name,
-    mm::{translated_refmut, translated_str},
+    mm::{translated_refmut, translated_str, virt_addr_to_phy_addr, VirtAddr},
     task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next, TaskStatus,
-    },
+        add_task, current_task, current_user_token, exit_current_and_run_next, get_task_info, suspend_current_and_run_next, task_mmap, task_unmap,task_set_priority,TaskInfo
+    }, timer::get_time_us,
 };
 
 #[repr(C)]
@@ -18,16 +17,16 @@ pub struct TimeVal {
     pub usec: usize,
 }
 
-/// Task information
-#[allow(dead_code)]
-pub struct TaskInfo {
-    /// Task status in it's life cycle
-    status: TaskStatus,
-    /// The numbers of syscall called by task
-    syscall_times: [u32; MAX_SYSCALL_NUM],
-    /// Total running time of task
-    time: usize,
-}
+// /// Task information
+// #[allow(dead_code)]
+// pub struct TaskInfo {
+//     /// Task status in it's life cycle
+//     status: TaskStatus,
+//     /// The numbers of syscall called by task
+//     syscall_times: [u32; MAX_SYSCALL_NUM],
+//     /// Total running time of task
+//     time: usize,
+// }
 
 /// task exits and submit an exit code
 pub fn sys_exit(exit_code: i32) -> ! {
@@ -119,10 +118,28 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_get_time",
         current_task().unwrap().pid.0
     );
-    -1
+    let us = get_time_us();
+
+    let v_addr = VirtAddr::from(_ts as usize);
+    // // from virtAddr to PhysAddr
+    trace!("kernel: v_addr is {}", v_addr.0);
+    let p_addr = virt_addr_to_phy_addr(v_addr);
+
+    trace!("kernel: p_addr is {}", p_addr.0);
+    trace!("kernel: time is {}", us);
+
+    let ts = p_addr.0 as *mut TimeVal;
+    unsafe {
+        *ts = TimeVal {
+            sec: us / 1_000_000,
+            usec: us % 1_000_000,
+        };
+    }
+
+    0
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
@@ -130,28 +147,45 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
 pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
     trace!(
-        "kernel:pid[{}] sys_task_info NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_task_info ",
         current_task().unwrap().pid.0
     );
-    -1
+    let v_addr = VirtAddr::from(_ti as usize);
+    let p_addr = virt_addr_to_phy_addr(v_addr);
+
+    let ti = p_addr.0 as *mut TaskInfo;
+
+    get_task_info(ti);
+
+    0
 }
 
 /// YOUR JOB: Implement mmap.
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_mmap ",
         current_task().unwrap().pid.0
     );
-    -1
+    if _port &! 0x7 != 0 || _port & 0x7 == 0 {
+        return -1;
+    } 
+    if _start % 4096 != 0 {
+        return  -1;
+    }
+    // -1
+    task_mmap(_start, _len, _port)
 }
 
 /// YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_munmap ",
         current_task().unwrap().pid.0
     );
-    -1
+    if _start % 4096 != 0 {
+        return  -1;
+    }
+    task_unmap(_start, _len)
 }
 
 /// change data segment size
@@ -168,10 +202,29 @@ pub fn sys_sbrk(size: i32) -> isize {
 /// HINT: fork + exec =/= spawn
 pub fn sys_spawn(_path: *const u8) -> isize {
     trace!(
-        "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_spawn",
         current_task().unwrap().pid.0
     );
-    -1
+    let current_task = current_task().unwrap();
+    let new_task = current_task.fork();
+    let new_pid = new_task.pid.0;
+    // modify trap context of new_task, because it returns immediately after switching
+    let trap_cx = new_task.inner_exclusive_access().get_trap_cx();
+    // we do not have to move to next instruction since we have done it before
+    // for child process, fork returns 0
+    trap_cx.x[10] = 0;
+    // add new task to scheduler
+    add_task(new_task.clone());
+
+    let token = new_task.get_user_token();
+    let path = translated_str(token, _path);
+    if let Some(data) = get_app_data_by_name(path.as_str()) {
+        new_task.exec(data);
+        suspend_current_and_run_next();
+    } else {
+     trace!("kernel:pid[{}] exec failed!",new_pid);   
+    }
+    new_pid as isize
 }
 
 // YOUR JOB: Set task priority.
@@ -180,5 +233,6 @@ pub fn sys_set_priority(_prio: isize) -> isize {
         "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    task_set_priority(_prio)
+    // -1
 }
