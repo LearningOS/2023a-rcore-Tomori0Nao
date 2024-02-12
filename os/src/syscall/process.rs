@@ -3,9 +3,9 @@
 use alloc::sync::Arc;
 
 use crate::{
-    config::MAX_SYSCALL_NUM,
+    // config::MAX_SYSCALL_NUM,
     fs::{open_file, OpenFlags},
-    loader::get_app_data_by_name,
+    // loader::get_app_data_by_name,
     mm::{translated_refmut, translated_str, virt_addr_to_phy_addr, VirtAddr},
     task::{
         add_task, current_task, current_user_token, exit_current_and_run_next, get_task_info, suspend_current_and_run_next, task_mmap, task_unmap,task_set_priority,TaskInfo
@@ -219,12 +219,17 @@ pub fn sys_spawn(_path: *const u8) -> isize {
 
     let token = new_task.get_user_token();
     let path = translated_str(token, _path);
-    if let Some(data) = get_app_data_by_name(path.as_str()) {
-        new_task.exec(data);
-        suspend_current_and_run_next();
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
+        new_task.exec(all_data.as_slice());
     } else {
      trace!("kernel:pid[{}] exec failed!",new_pid);   
     }
+    // if let Some(data) = get_app_data_by_name(path.as_str()) {
+    //     new_task.exec(data);
+    //     suspend_current_and_run_next();
+    // } else {
+    // }
     new_pid as isize
 }
 
