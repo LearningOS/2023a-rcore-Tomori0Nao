@@ -1,3 +1,5 @@
+// use core::mem::size_of;
+
 use super::{
     block_cache_sync_all, get_block_cache, BlockDevice, DirEntry, DiskInode, DiskInodeType,
     EasyFileSystem, DIRENT_SZ,
@@ -182,5 +184,54 @@ impl Inode {
             }
         });
         block_cache_sync_all();
+    }
+    /// get inode id for fstat
+    pub fn get_inode_id(&self) -> u64 {
+        let fs = self.fs.lock();
+        fs.get_indoe_id(self.block_id, self.block_offset)
+    }
+    /// linkat for current inode
+    pub fn linkat(&self, _old_name: &str, _new_name: &str) -> isize {
+        let mut fs = self.fs.lock();
+        let op = |root_inode: &DiskInode| {
+            // assert it is a directory
+            assert!(root_inode.is_dir());
+            // has the file been created?
+            self.find_inode_id(_old_name, root_inode)
+        };
+        let op_2 = |root_inode: &DiskInode| {
+            // assert it is a directory
+            assert!(root_inode.is_dir());
+            // has the file been created?
+            self.find_inode_id(_new_name, root_inode)
+        };
+        let old_inode_id = self.read_disk_inode(op);
+        if old_inode_id.is_none() || self.read_disk_inode(op).is_some() {
+            return -1;
+        }
+        // initialize inode
+        let (old_inode_block_id, old_inode_block_offset) =
+            fs.get_disk_inode_pos(old_inode_id.unwrap());
+        get_block_cache(old_inode_block_id as usize, Arc::clone(&self.block_device))
+            .lock()
+            .modify(old_inode_block_offset, |new_inode: &mut DiskInode| {
+                new_inode.initialize(DiskInodeType::File);
+            });
+            // update dir table
+        self.modify_disk_inode(|root_inode| {
+            // append file in the dirent
+            let file_count = (root_inode.size as usize) / DIRENT_SZ;
+            let new_size = (file_count + 1) * DIRENT_SZ;
+            // increase size
+            self.increase_size(new_size as u32, root_inode, &mut fs);
+            // write dirent
+            let dirent = DirEntry::new(_new_name, old_inode_id.unwrap());
+            root_inode.write_at(
+                file_count * DIRENT_SZ,
+                dirent.as_bytes(),
+                &self.block_device,
+            );
+        });
+        0
     }
 }

@@ -293,6 +293,7 @@ pub fn virt_addr_to_phy_addr(vaddr: VirtAddr) -> PhysAddr {
     // 由虚拟地址得到虚拟页号、地址偏移
     // 虚拟页表得到物理页号、
     // 物理页号加上偏移得到物理地址
+    warn!("in v_add -> p_addr ");
     let vpn = vaddr.floor();
     let offset = vaddr.page_offset();
     let token = current_user_token();
@@ -300,10 +301,13 @@ pub fn virt_addr_to_phy_addr(vaddr: VirtAddr) -> PhysAddr {
     // 从vpn获得ppn
     let page_table = PageTable::from_token(token);
     let ppn = page_table.translate(vpn).unwrap().ppn();
+    warn!("in v_add -> p_addr 11111");
     
     let addr = PhysAddr::from(ppn);
     trace!("kernel: vpn is {}",vpn.0);
     trace!("kernel: token is {}",token);
+    warn!("in v_add -> p_addr 33333");
+
 
 
     trace!("kernel: ppn is {}",ppn.0);
@@ -312,6 +316,36 @@ pub fn virt_addr_to_phy_addr(vaddr: VirtAddr) -> PhysAddr {
     let test = usize::from(addr) + offset;
 
     // print!("test is {}",test);
+    warn!("v_add -> p_addr finished");
+    PhysAddr::from(test)
+}
+/// 实现虚拟地址到物理地址的转换 需要 "token" 作为参数
+pub fn virt_addr_to_phy_addr_with_token(vaddr: VirtAddr,token:usize) -> PhysAddr {
+    // 由虚拟地址得到虚拟页号、地址偏移
+    // 虚拟页表得到物理页号、
+    // 物理页号加上偏移得到物理地址
+    warn!("in v_add -> p_addr ");
+    let vpn = vaddr.floor();
+    let offset = vaddr.page_offset();
+    // 根据"改写sys_write 的实现"中 "translated_byte_buffer"的介绍
+    // 从vpn获得ppn
+    let page_table = PageTable::from_token(token);
+    let ppn = page_table.translate(vpn).unwrap().ppn();
+    warn!("in v_add -> p_addr 11111");
     
+    let addr = PhysAddr::from(ppn);
+    trace!("kernel: vpn is {}",vpn.0);
+    trace!("kernel: token is {}",token);
+    warn!("in v_add -> p_addr 33333");
+
+
+
+    trace!("kernel: ppn is {}",ppn.0);
+    trace!("kernel: addr is {}",addr.0);
+    trace!("kernel: offset is {}",offset);
+    let test = usize::from(addr) + offset;
+
+    // print!("test is {}",test);
+    warn!("v_add -> p_addr finished");
     PhysAddr::from(test)
 }

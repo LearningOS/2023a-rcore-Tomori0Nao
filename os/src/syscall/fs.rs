@@ -1,6 +1,12 @@
 //! File and filesystem-related syscalls
+// use alloc::sync::Arc;
+
+// use core::borrow::Borrow;
+
 use crate::fs::{open_file, OpenFlags, Stat};
-use crate::mm::{translated_byte_buffer, translated_str, UserBuffer};
+use crate::mm::{
+    translated_byte_buffer, translated_str, virt_addr_to_phy_addr_with_token, UserBuffer, VirtAddr,
+};
 use crate::task::{current_task, current_user_token};
 
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
@@ -54,6 +60,7 @@ pub fn sys_open(path: *const u8, flags: u32) -> isize {
     if let Some(inode) = open_file(path.as_str(), OpenFlags::from_bits(flags).unwrap()) {
         let mut inner = task.inner_exclusive_access();
         let fd = inner.alloc_fd();
+        // inode
         inner.fd_table[fd] = Some(inode);
         fd as isize
     } else {
@@ -76,12 +83,27 @@ pub fn sys_close(fd: usize) -> isize {
 }
 
 /// YOUR JOB: Implement fstat.
-pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_fstat NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+pub fn sys_fstat(fd: usize, _st: *mut Stat) -> isize {
+    trace!("kernel:pid[{}] sys_fstat ", current_task().unwrap().pid.0);
+    let token = current_user_token();
+    let task = current_task().unwrap();
+    let inner = task.inner_exclusive_access();
+    if fd >= inner.fd_table.len() {
+        return -1;
+    }
+    if let Some(file) = &inner.fd_table[fd] {
+        let v_addr = VirtAddr::from(_st as usize);
+        warn!("before borrow!!!");
+        let p_addr = virt_addr_to_phy_addr_with_token(v_addr, token);
+        warn!("after borrow!!!");
+
+        let stat = p_addr.0 as *mut Stat;
+
+        file.fstat(stat);
+    } else {
+        return -1;
+    }
+    0
 }
 
 /// YOUR JOB: Implement linkat.
