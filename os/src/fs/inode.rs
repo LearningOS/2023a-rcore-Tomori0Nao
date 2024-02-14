@@ -123,6 +123,14 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
         })
     }
 }
+/// linkat 
+pub fn linkat(old_name: &str, new_name: &str) -> isize {
+    ROOT_INODE.linkat(old_name, new_name)
+}
+/// unlinkat 
+pub fn unlinkat(name: &str) -> isize {
+    ROOT_INODE.unlinkat(name)
+}
 
 impl File for OSInode {
     fn readable(&self) -> bool {
@@ -158,11 +166,14 @@ impl File for OSInode {
     fn fstat(&self, _st: *mut Stat) -> usize {
         let inner = self.inner.exclusive_access();
         let inode = &inner.inode;
+        let ino = inode.get_inode_id();
+        let nlink = ROOT_INODE.get_nlink(ino);
+        warn!("nlink is {}",nlink);
         unsafe {
             (*_st).dev = 0;
-            (*_st).ino = inode.get_inode_id();
+            (*_st).ino = ino as u64;
             (*_st).mode = StatMode::FILE;
-            (*_st).nlink = 1;
+            (*_st).nlink = nlink;
             (*_st).pad = [1,2,3,4,5,6,7];
         }
         0

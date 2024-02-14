@@ -1,5 +1,7 @@
 // use core::mem::size_of;
 
+// use core::borrow::BorrowMut;
+
 use super::{
     block_cache_sync_all, get_block_cache, BlockDevice, DirEntry, DiskInode, DiskInodeType,
     EasyFileSystem, DIRENT_SZ,
@@ -8,6 +10,21 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::{Mutex, MutexGuard};
+// /// The stat of a inode
+// #[repr(C)]
+// #[derive(Debug)]
+// pub struct Stat {
+//     /// ID of device containing file
+//     pub dev: u64,
+//     /// inode number
+//     pub ino: u64,
+//     /// file type and mode
+//     pub mode: u32,
+//     /// number of hard links
+//     pub nlink: u32,
+//     /// unused pad
+//     pad: [u64; 7],
+// }
 /// Virtual filesystem layer over easy-fs
 pub struct Inode {
     block_id: usize,
@@ -186,38 +203,72 @@ impl Inode {
         block_cache_sync_all();
     }
     /// get inode id for fstat
-    pub fn get_inode_id(&self) -> u64 {
+    pub fn get_inode_id(&self) -> u32 {
         let fs = self.fs.lock();
         fs.get_indoe_id(self.block_id, self.block_offset)
     }
-    /// linkat for current inode
-    pub fn linkat(&self, _old_name: &str, _new_name: &str) -> isize {
+    /// get nlink
+    pub fn get_nlink(&self,inode_id:u32) -> u32 {
+         // update dir table
+         self.modify_disk_inode(|root_inode| {
+            assert!(root_inode.is_dir());
+            // root_inode
+            let file_count = (root_inode.size as usize) / DIRENT_SZ;
+            let mut dirent = DirEntry::empty();
+            let mut nlink = 0;
+            
+            // find the target [`DirEntry`] through serach the all "DirEntry" in root_inode
+            for i in 0..file_count {
+                assert_eq!(
+                    root_inode.read_at(DIRENT_SZ * i, dirent.as_bytes_mut(), &self.block_device,),
+                    DIRENT_SZ,
+                );
+                if dirent.inode_id() == inode_id {
+                    nlink += 1;
+                    // dirent = DirEntry::empty();
+                    // root_inode.write_at(i * DIRENT_SZ, dirent.as_bytes(), &self.block_device);
+                    // break;
+                }
+            }
+            // file_count as u32
+            if nlink == 0 {
+                1
+            }else {
+                nlink
+            }
+        })
+        // 1
+    }
+    // /// increase nlink for current inode
+    // pub fn increase_nlink(&mut self){
+    //     self.nlink += 1;
+    // }
+   
+    /// link for target files
+    pub fn linkat(& self, old_name: &str, new_name: &str) -> isize {
         let mut fs = self.fs.lock();
-        let op = |root_inode: &DiskInode| {
+        // self.nlink += 1;
+        // let old_inode = &mut self.find(old_name).unwrap();
+        // let mut new_inode = self.find(new_name).unwrap();
+
+        // old_inode.increase_nlink();
+        let old_inode_id = self.read_disk_inode(|root_inode: &DiskInode| {
             // assert it is a directory
             assert!(root_inode.is_dir());
             // has the file been created?
-            self.find_inode_id(_old_name, root_inode)
-        };
-        let op_2 = |root_inode: &DiskInode| {
+            self.find_inode_id(old_name, root_inode)
+        });
+        let new_inode_id = self.read_disk_inode(|root_inode: &DiskInode| {
             // assert it is a directory
             assert!(root_inode.is_dir());
             // has the file been created?
-            self.find_inode_id(_new_name, root_inode)
-        };
-        let old_inode_id = self.read_disk_inode(op);
-        if old_inode_id.is_none() || self.read_disk_inode(op).is_some() {
+            self.find_inode_id(new_name, root_inode)
+        });
+        if old_inode_id.is_none() || new_inode_id.is_some() {
             return -1;
         }
-        // initialize inode
-        let (old_inode_block_id, old_inode_block_offset) =
-            fs.get_disk_inode_pos(old_inode_id.unwrap());
-        get_block_cache(old_inode_block_id as usize, Arc::clone(&self.block_device))
-            .lock()
-            .modify(old_inode_block_offset, |new_inode: &mut DiskInode| {
-                new_inode.initialize(DiskInodeType::File);
-            });
-            // update dir table
+
+        // update dir table
         self.modify_disk_inode(|root_inode| {
             // append file in the dirent
             let file_count = (root_inode.size as usize) / DIRENT_SZ;
@@ -225,12 +276,45 @@ impl Inode {
             // increase size
             self.increase_size(new_size as u32, root_inode, &mut fs);
             // write dirent
-            let dirent = DirEntry::new(_new_name, old_inode_id.unwrap());
+            let dirent = DirEntry::new(new_name, old_inode_id.unwrap());
             root_inode.write_at(
                 file_count * DIRENT_SZ,
                 dirent.as_bytes(),
                 &self.block_device,
             );
+        });
+        0
+    }
+    /// unlink for target file
+    pub fn unlinkat(&self, name: &str) -> isize {
+        // let inode_id = self.read_disk_inode(|root_inode: &DiskInode| {
+        //     // assert it is a directory
+        //     assert!(root_inode.is_dir());
+        //     // has the file been created?
+        //     self.find_inode_id(name, root_inode)
+        // });
+        // if inode_id.is_some() {
+        //     return -1;
+        // }
+        // update dir table
+        self.modify_disk_inode(|root_inode| {
+            assert!(root_inode.is_dir());
+            // root_inode
+            let file_count = (root_inode.size as usize) / DIRENT_SZ;
+            let mut dirent = DirEntry::empty();
+            // find the target [`DirEntry`] through serach the all "DirEntry" in root_inode
+            for i in 0..file_count {
+                assert_eq!(
+                    root_inode.read_at(DIRENT_SZ * i, dirent.as_bytes_mut(), &self.block_device,),
+                    DIRENT_SZ,
+                );
+                // dirent.inode_id();
+                if dirent.name() == name {
+                    dirent = DirEntry::empty();
+                    root_inode.write_at(i * DIRENT_SZ, dirent.as_bytes(), &self.block_device);
+                    break;
+                }
+            }
         });
         0
     }

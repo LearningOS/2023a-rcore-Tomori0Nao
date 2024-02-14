@@ -150,10 +150,10 @@ impl EasyFileSystem {
     }
     /// Get inode by id
     /// 参考 get_disk_inode_pos
-    pub fn get_indoe_id(&self, block_id: usize,block_offset:usize) -> u64{
-        let inode_size = core::mem::size_of::<DiskInode>() as u64;
-        let inodes_per_block = (BLOCK_SZ as u64 / inode_size) as u64;
-        let inode_id = (block_id  as u64 - (self.inode_area_start_block as u64) )* inodes_per_block + block_offset as u64 ;
+    pub fn get_indoe_id(&self, block_id: usize,block_offset:usize) -> u32{
+        let inode_size = core::mem::size_of::<DiskInode>() as u32 ;
+        let inodes_per_block = BLOCK_SZ as u32 / inode_size ;
+        let inode_id = (block_id as u32  - (self.inode_area_start_block ) )* inodes_per_block + block_offset as u32 ;
         inode_id
     }
 }
